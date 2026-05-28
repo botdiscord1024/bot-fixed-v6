@@ -1,0 +1,84 @@
+import discord
+from discord.ext import commands, tasks
+from discord import app_commands
+import asyncio
+from datetime import date
+from utils import load, save, err, ok
+from gemini_guard import ask_gemini
+
+# Пазим последната дата на изпращане, за да не се праща 2 пъти при рестарт
+_last_run_date: dict = {}  # guild_id -> date
+
+class ROTD(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.rotd_scheduler.start()
+
+    def cog_unload(self):
+        self.rotd_scheduler.cancel()
+
+    def get_config(self, gid):
+        return load('config.json').get(str(gid), {}).get('rotd_settings', {})
+
+    async def run_rotd(self, guild):
+        gid   = str(guild.id)
+        m_cfg = self.get_config(guild.id)
+        if not m_cfg.get('enabled', True): return
+
+        channel = guild.get_channel(int(m_cfg.get('channel_id', 0))) if m_cfg.get('channel_id') else None
+        if not channel: return
+
+        # ── ЗАЩИТА: не праща 2 пъти на един и същи ден ────
+        today = date.today()
+        if _last_run_date.get(gid) == today:
+            return
+        _last_run_date[gid] = today
+
+        try:
+            ai_content = await ask_gemini("Generate a tricky, fun Riddle of the Day for a gaming server. Do NOT include the answer. Just output the riddle cleanly.")
+        except Exception as e:
+            print(f"[ROTD] Gemini error: {e}")
+            ai_content = "I have keys but open no locks. I have space but no room. What am I? (A Keyboard!)"
+
+        color_map = {"blue": discord.Color.blue(), "red": discord.Color.red(),
+                     "orange": discord.Color.orange(), "purple": discord.Color.purple()}
+        embed = discord.Embed(
+            title="🧩 Riddle Of The Day",
+            description=m_cfg.get('announcement_message', f"> {ai_content}").replace("{content}", ai_content),
+            color=color_map.get("orange", discord.Color.blurple())
+        )
+
+        pings = "".join([f"<@&{rid}>" for rid in m_cfg.get('mentioned_roles', [])])
+        msg   = await channel.send(content=pings if pings else None, embed=embed)
+
+        try:
+            thread = await msg.create_thread(
+                name=m_cfg.get('thread_name', "💬 Discussion"),
+                auto_archive_duration=int(m_cfg.get('archive_duration', 1440))
+            )
+            if int(m_cfg.get('slowmode', 0)) > 0:
+                await thread.edit(slowmode_delay=int(m_cfg.get('slowmode', 0)))
+        except: pass
+
+    @tasks.loop(hours=24)
+    async def rotd_scheduler(self):
+        for g in self.bot.guilds:
+            await self.run_rotd(g)
+            await asyncio.sleep(2)  # Малка пауза между guilds
+
+    @rotd_scheduler.before_loop
+    async def before_rotd(self):
+        await self.bot.wait_until_ready()
+
+    @app_commands.command(name="trigger_rotd", description="Test ROTD instantly (Admin)")
+    @app_commands.default_permissions(administrator=True)
+    async def trigger_rotd(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        # Изчисти кеша за днес, за да може да се изпрати пак
+        gid = str(interaction.guild.id)
+        _last_run_date.pop(gid, None)
+        await self.run_rotd(interaction.guild)
+        await interaction.followup.send("✅ ROTD Posted!", ephemeral=True)
+
+async def setup(bot):
+    await bot.add_cog(ROTD(bot))
