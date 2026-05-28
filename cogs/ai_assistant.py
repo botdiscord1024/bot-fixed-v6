@@ -7,6 +7,7 @@ import asyncio
 import os
 import time
 import urllib.parse
+import google.generativeai as genai  # Изнесен най-горе
 from utils import load, save, err, ok
 from gemini_guard import ask_gemini, get_stats
 
@@ -30,7 +31,8 @@ class AIAssistant(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message):
-        if message.author.bot or not message.guild:
+        # 1. Желязна защита срещу само-задействане и други ботове
+        if message.author.bot or message.author.id == self.bot.user.id or not message.guild:
             return
 
         gid = str(message.guild.id)
@@ -43,9 +45,7 @@ class AIAssistant(commands.Cog):
         pure_text        = message.content.replace(bot_mention, "").replace(bot_mention_nick, "").strip()
 
         # Игнорирай команди и единични букви (бесеница и т.н.)
-        if pure_text.startswith(('!', '?', '/', '$', '.', '-', '>')):
-            return
-        if len(pure_text) == 1:
+        if pure_text.startswith(('!', '?', '/', '$', '.', '-', '>')) or len(pure_text) == 1:
             return
 
         # Провери дали е reply към бота или mention
@@ -54,10 +54,11 @@ class AIAssistant(commands.Cog):
         if message.reference:
             try:
                 referenced_msg = message.reference.resolved or await message.channel.fetch_message(message.reference.message_id)
-            except:
+                # Подсигуряваме, че обектът има автор (защита срещу DeletedReferencedMessage)
+                if referenced_msg and hasattr(referenced_msg, 'author') and referenced_msg.author.id == self.bot.user.id:
+                    is_reply_to_bot = True
+            except Exception:
                 referenced_msg = None
-            if referenced_msg and referenced_msg.author.id == self.bot.user.id:
-                is_reply_to_bot = True
 
         is_mentioning_bot = self.bot.user in message.mentions
 
@@ -71,7 +72,7 @@ class AIAssistant(commands.Cog):
         remaining = _check_user_cooldown(uid)
         if remaining > 0:
             await message.add_reaction("⏳")
-            cooldown_msg = await message.channel.send(
+            await message.channel.send(
                 f"{message.author.mention} ⏳ Please wait **{remaining:.0f}s** before asking me again!",
                 delete_after=remaining
             )
@@ -86,23 +87,22 @@ class AIAssistant(commands.Cog):
                 for att in message.attachments:
                     if att.content_type and att.content_type.startswith("image/"):
                         contents.append({"mime_type": att.content_type, "data": await att.read()})
-                if referenced_msg:
+                
+                if referenced_msg and hasattr(referenced_msg, 'attachments'):
                     for att in referenced_msg.attachments:
                         if att.content_type and att.content_type.startswith("image/"):
                             contents.append({"mime_type": att.content_type, "data": await att.read()})
 
-                # Ако има само текст, използваме ask_gemini
-                # Ако има изображения, трябва директен genai call
+                # Използваме asyncio.wait_for с 25 секунди макс време за отговор
                 if len(contents) == 1:
                     system = (
                         "You are a witty, hype, and slightly chaotic Discord assistant for an English "
                         "Smash Karts gaming community. Match the high-energy vibe. Drop casual gaming slang, "
                         "reference karts, power-ups, weapons. Keep responses concise and fun. Always reply in English."
                     )
-                    reply_text = await ask_gemini(contents[0], system=system)
+                    reply_text = await asyncio.wait_for(ask_gemini(contents[0], system=system), timeout=25.0)
                 else:
                     # Директен call за multimodal (изображения)
-                    import google.generativeai as genai
                     model = genai.GenerativeModel(
                         model_name="gemini-2.0-flash",
                         system_instruction=(
@@ -110,11 +110,17 @@ class AIAssistant(commands.Cog):
                             "Analyze images and keep responses concise and fun. Always reply in English."
                         )
                     )
-                    response = await asyncio.to_thread(model.generate_content, contents)
+                    response = await asyncio.wait_for(
+                        asyncio.to_thread(model.generate_content, contents), 
+                        timeout=25.0
+                    )
                     reply_text = response.text
 
                 await message.reply(reply_text)
 
+            except asyncio.TimeoutError:
+                await message.reply("⏳ *Engine stalled!* AI took too long to respond. Try again!")
+                print(f"[AI Timeout] Gemini API slowed down and was cut off to prevent bot crash.")
             except Exception as e:
                 err_str = str(e)
                 if "Daily Gemini limit" in err_str:
