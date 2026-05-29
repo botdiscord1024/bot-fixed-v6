@@ -69,6 +69,9 @@ class ROTD(commands.Cog):
     @rotd_scheduler.before_loop
     async def before_rotd(self):
         await self.bot.wait_until_ready()
+        # ФИКС: Изчаква 45 секунди на старта
+        print("⏳ ROTD task is staggering... waiting 45 seconds on startup.")
+        await asyncio.sleep(45)
 
     @app_commands.command(name="trigger_rotd", description="Test ROTD instantly (Admin)")
     @app_commands.default_permissions(administrator=True)
