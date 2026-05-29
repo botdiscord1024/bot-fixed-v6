@@ -7,7 +7,7 @@ import asyncio
 import os
 import time
 import urllib.parse
-import google.generativeai as genai  # Изнесен най-горе
+import google.generativeai as genai
 from utils import load, save, err, ok
 from gemini_guard import ask_gemini, get_stats
 
@@ -54,7 +54,6 @@ class AIAssistant(commands.Cog):
         if message.reference:
             try:
                 referenced_msg = message.reference.resolved or await message.channel.fetch_message(message.reference.message_id)
-                # Подсигуряваме, че обектът има автор (защита срещу DeletedReferencedMessage)
                 if referenced_msg and hasattr(referenced_msg, 'author') and referenced_msg.author.id == self.bot.user.id:
                     is_reply_to_bot = True
             except Exception:
@@ -82,8 +81,8 @@ class AIAssistant(commands.Cog):
 
         async with message.channel.typing():
             try:
-                # Събери съдържание (текст + изображения)
-                contents = [message.content or "Look at this image."]
+                # Поправено: Използва се чистият pure_text вместо message.content
+                contents = [pure_text or "Look at this image."]
                 for att in message.attachments:
                     if att.content_type and att.content_type.startswith("image/"):
                         contents.append({"mime_type": att.content_type, "data": await att.read()})
@@ -161,7 +160,7 @@ class AIAssistant(commands.Cog):
         em.add_field(name="📊 Today's Calls",    value=f"{stats['calls_today']} / {stats['daily_limit']}")
         em.add_field(name="⚡ This Minute",       value=f"{stats['calls_this_min']} / {stats['minute_limit']}")
         em.add_field(name="✅ Remaining Today",   value=str(stats['remaining_today']))
-        pct = round(stats['calls_today'] / stats['daily_limit'] * 100)
+        pct = round(stats['calls_today'] / stats['daily_limit'] * 100) if stats['daily_limit'] > 0 else 0
         bar = "█" * (pct // 10) + "░" * (10 - pct // 10)
         em.add_field(name="📈 Usage", value=f"`{bar}` {pct}%", inline=False)
         await interaction.response.send_message(embed=em)
