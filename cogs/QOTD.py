@@ -69,6 +69,9 @@ class QOTD(commands.Cog):
     @qotd_scheduler.before_loop
     async def before_qotd(self):
         await self.bot.wait_until_ready()
+        # ФИКС: Изчаква 25 секунди на старта
+        print("⏳ QOTD task is staggering... waiting 25 seconds on startup.")
+        await asyncio.sleep(25)
 
     @app_commands.command(name="trigger_qotd", description="Test QOTD instantly (Admin)")
     @app_commands.default_permissions(administrator=True)
