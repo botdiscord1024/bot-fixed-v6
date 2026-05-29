@@ -69,6 +69,9 @@ class SOTD(commands.Cog):
     @sotd_scheduler.before_loop
     async def before_sotd(self):
         await self.bot.wait_until_ready()
+        # ФИКС: Изчаква 65 секунди на старта
+        print("⏳ SOTD task is staggering... waiting 65 seconds on startup.")
+        await asyncio.sleep(65)
 
     @app_commands.command(name="trigger_sotd", description="Test SOTD instantly (Admin)")
     @app_commands.default_permissions(administrator=True)
