@@ -21,7 +21,7 @@ _calls_today   = 0
 _calls_this_min= 0
 _today_date    = date.today()
 _min_start     = time.time()
-_lock          = asyncio.Lock()
+_lock          = None  # Поправено: Дефинира се като None тук
 
 def _reset_if_needed():
     global _calls_today, _today_date, _calls_this_min, _min_start
@@ -41,7 +41,11 @@ async def ask_gemini(prompt: str, system: str = None, model_name: str = "gemini-
     - автоматично чакане при 429
     - fallback при грешка
     """
-    global _calls_today, _calls_this_min
+    global _calls_today, _calls_this_min, _lock
+
+    # Поправено: Lock-ът се създава "мързеливо" вътре в активния event loop
+    if _lock is None:
+        _lock = asyncio.Lock()
 
     async with _lock:
         _reset_if_needed()
