@@ -69,6 +69,9 @@ class FOTD(commands.Cog):
     @fotd_scheduler.before_loop
     async def before_fotd(self):
         await self.bot.wait_until_ready()
+        # ФИКС: Изчаква 5 секунди на старта
+        print("⏳ FOTD task is staggering... waiting 5 seconds on startup.")
+        await asyncio.sleep(5)
 
     @app_commands.command(name="trigger_fotd", description="Test FOTD instantly (Admin)")
     @app_commands.default_permissions(administrator=True)
