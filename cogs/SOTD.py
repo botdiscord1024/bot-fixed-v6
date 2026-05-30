@@ -6,8 +6,7 @@ from datetime import date
 from utils import load, save, err, ok
 from gemini_guard import ask_gemini
 
-# Пазим последната дата на изпращане, за да не се праща 2 пъти при рестарт
-_last_run_date: dict = {}  # guild_id -> date
+_last_run_date: dict = {}
 
 class SOTD(commands.Cog):
     def __init__(self, bot):
@@ -28,7 +27,6 @@ class SOTD(commands.Cog):
         channel = guild.get_channel(int(m_cfg.get('channel_id', 0))) if m_cfg.get('channel_id') else None
         if not channel: return
 
-        # ── ЗАЩИТА: не праща 2 пъти на един и същи ден ────
         today = date.today()
         if _last_run_date.get(gid) == today:
             return
@@ -45,7 +43,7 @@ class SOTD(commands.Cog):
         embed = discord.Embed(
             title="🎵 Song Of The Day",
             description=m_cfg.get('announcement_message', f"> {ai_content}").replace("{content}", ai_content),
-            color=color_map.get("purple", discord.Color.blurple())
+            color=color_map.get("purple", discord.Color.purple())
         )
 
         pings = "".join([f"<@&{rid}>" for rid in m_cfg.get('mentioned_roles', [])])
@@ -64,12 +62,11 @@ class SOTD(commands.Cog):
     async def sotd_scheduler(self):
         for g in self.bot.guilds:
             await self.run_sotd(g)
-            await asyncio.sleep(2)  # Малка пауза между guilds
+            await asyncio.sleep(2)
 
     @sotd_scheduler.before_loop
     async def before_sotd(self):
         await self.bot.wait_until_ready()
-        # ФИКС: Изчаква 65 секунди на старта
         print("⏳ SOTD task is staggering... waiting 65 seconds on startup.")
         await asyncio.sleep(65)
 
@@ -77,7 +74,6 @@ class SOTD(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     async def trigger_sotd(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        # Изчисти кеша за днес, за да може да се изпрати пак
         gid = str(interaction.guild.id)
         _last_run_date.pop(gid, None)
         await self.run_sotd(interaction.guild)
