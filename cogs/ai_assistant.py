@@ -21,25 +21,73 @@ def _check_user_cooldown(uid: str) -> float:
 class AIAssistant(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # Maps user_message_id -> list of bot_message_ids (handles multi-chunk responses)
-        # Using OrderedDict to easily maintain a max size of 1000 items to save memory
+        # Maps user_message_id -> list of bot_message_ids (handles deletion and edits)
         self.response_tracker = OrderedDict()
 
     def get_guild_config(self, gid):
         return load('config.json').get(str(gid), {})
 
     def _track_response(self, user_msg_id: int, bot_msg_ids: list):
-        """Saves the message relation and prevents memory leaks by capping at 1000 entries."""
         if len(self.response_tracker) > 1000:
-            self.response_tracker.popitem(last=False)  # Remove oldest entry
+            self.response_tracker.popitem(last=False)
         self.response_tracker[user_msg_id] = bot_msg_ids
 
+    # ══════════════════════════════════════════════════════════
+    #  🎨 EXPLICIT GENERATION FLOW (DIRECT GEMINI CALL)
+    # ══════════════════════════════════════════════════════════
+    async def handle_generation_flow(self, message, prompt: str):
+        """Triggers when a user says '@Bot generate ...'. Gemini acts as a dedicated asset creator."""
+        if not prompt:
+            sent_msg = await message.reply("❌ Please provide a prompt for me to generate! (e.g., `@Bot generate a sci-fi story about Mars`)")
+            self._track_response(message.id, [sent_msg.id])
+            return
+
+        try:
+            async with message.channel.typing():
+                # Specialized professional generator prompt layout
+                generation_system_prompt = (
+                    "You are an expert AI Content Generator and Asset Designer for a premium Discord community. "
+                    "Your job is to generate incredibly high-quality, creative, and detailed assets based on the prompt. "
+                    "Use advanced markdown formatting, clear code blocks, list metrics, or storytelling structures where applicable. "
+                    "Make your output look visually stunning, polished, and structured. Include descriptive emojis naturally. "
+                    "All outputs must be strictly in English."
+                )
+                
+                # We forward the prompt straight to Gemini Guard
+                response_text = await ask_gemini(prompt, system=generation_system_prompt)
+                
+                if response_text:
+                    bot_sent_messages = []
+                    # Handle message length splits automatically
+                    if len(response_text) > 2000:
+                        chunks = [response_text[i:i+1900] for i in range(0, len(response_text), 1900)]
+                        for chunk in chunks:
+                            sent_msg = await message.reply(chunk)
+                            bot_sent_messages.append(sent_msg.id)
+                    else:
+                        sent_msg = await message.reply(response_text)
+                        bot_sent_messages.append(sent_msg.id)
+                    
+                    # Ensure tracking works perfectly even for generations
+                    self._track_response(message.id, bot_sent_messages)
+                else:
+                    sent_msg = await message.reply("❌ Failed to generate content from the AI core.")
+                    self._track_response(message.id, [sent_msg.id])
+        except Exception as e:
+            print(f"[Generation Core Error]: {e}")
+            try:
+                sent_msg = await message.reply(f"⚠️ Error during content generation: {str(e)[:100]}")
+                self._track_response(message.id, [sent_msg.id])
+            except: pass
+
+    # ══════════════════════════════════════════════════════════
+    #  🧠 STANDARD CONVERSATIONAL AI FLOW
+    # ══════════════════════════════════════════════════════════
     async def _execute_ai_flow(self, message, is_edit=False):
-        """Core AI logic reused for both new messages and edited messages."""
         uid = str(message.author.id)
         remaining = _check_user_cooldown(uid)
         
-        if remaining > 0 and not is_edit: # Cooldown skipped on edits for smoother UX
+        if remaining > 0 and not is_edit:
             await message.reply(f"⏱️ Please wait {round(remaining, 1)} seconds before asking another question!", delete_after=5)
             return
         
@@ -47,6 +95,12 @@ class AIAssistant(commands.Cog):
 
         # Clean the bot mention from text
         user_input = message.content.replace(f'<@{self.bot.user.id}>', '').replace(f'<@!{self.bot.user.id}>', '').strip()
+
+        # 🔀 THE ROUTER: If it starts with "generate", hand it off completely to Gemini Generator
+        if user_input.lower().startswith("generate"):
+            generation_prompt = user_input[len("generate"):].strip()
+            await self.handle_generation_flow(message, generation_prompt)
+            return
 
         contents_to_send = []
         has_image = False
@@ -74,18 +128,17 @@ class AIAssistant(commands.Cog):
 
         try:
             async with message.channel.typing():
-                system_prompt = (
+                chat_system_prompt = (
                     "You are a helpful, friendly, and witty AI Assistant for a Discord server. "
                     "You fully support and love using emojis in your responses! Include them naturally. "
                     "Keep your answers engaging, creative, and try to keep them reasonably concise unless asked for details. "
                     "All interactions must be strictly in English."
                 )
                 
-                response_text = await ask_gemini(contents_to_send, system=system_prompt)
+                response_text = await ask_gemini(contents_to_send, system=chat_system_prompt)
                 
                 if response_text:
                     bot_sent_messages = []
-                    # Discord character limit safety (max 2000 chars)
                     if len(response_text) > 2000:
                         chunks = [response_text[i:i+1900] for i in range(0, len(response_text), 1900)]
                         for chunk in chunks:
@@ -95,7 +148,6 @@ class AIAssistant(commands.Cog):
                         sent_msg = await message.reply(response_text)
                         bot_sent_messages.append(sent_msg.id)
                     
-                    # Track this response so we can delete/overwrite it later if needed
                     self._track_response(message.id, bot_sent_messages)
                 else:
                     sent_msg = await message.reply("❌ Failed to generate a response from the AI core.")
@@ -131,28 +183,22 @@ class AIAssistant(commands.Cog):
         if is_mentioned or is_reply_to_bot:
             await self._execute_ai_flow(message, is_edit=False)
 
-    # ── 🗑️ LISTENER: ON MESSAGE DELETE ──
     @commands.Cog.listener()
     async def on_message_delete(self, message):
-        """If a user deletes their question, delete the AI's response(s) instantly."""
         if message.id in self.response_tracker:
             bot_msg_ids = self.response_tracker.pop(message.id, [])
             for b_id in bot_msg_ids:
                 try:
-                    # Using partial message avoids heavy API fetching overhead
                     await message.channel.get_partial_message(b_id).delete()
                 except Exception:
-                    pass # Message already deleted or missing permissions
+                    pass
 
-    # ── ✏️ LISTENER: ON MESSAGE EDIT ──
     @commands.Cog.listener()
     async def on_message_edit(self, before, after):
-        """If a user edits their question, delete old AI responses and generate a new one."""
         if before.content == after.content:
-            return # Ignore edits that don't change text (like link embeds loading)
+            return
 
         if after.id in self.response_tracker:
-            # 1. Delete the previous AI response chunks
             bot_msg_ids = self.response_tracker.pop(after.id, [])
             for b_id in bot_msg_ids:
                 try:
@@ -160,10 +206,8 @@ class AIAssistant(commands.Cog):
                 except Exception:
                     pass
             
-            # 2. Trigger a fresh response based on the updated content
             await self._execute_ai_flow(after, is_edit=True)
 
-    # ── Slash Command: /ai_status ──
     @app_commands.command(name="ai_status", description="Check the AI core load and daily statistics")
     async def ai_status(self, interaction: discord.Interaction):
         try:
@@ -181,7 +225,6 @@ class AIAssistant(commands.Cog):
         except Exception as e:
             await interaction.response.send_message(f"❌ Error fetching stats: {e}", ephemeral=True)
 
-    # ── Slash Command: /ai_emoji ──
     @app_commands.command(name="ai_emoji", description="Render a custom web dashboard emoji directly into chat")
     @app_commands.describe(name="The unique name of the custom emoji")
     async def ai_emoji(self, interaction: discord.Interaction, name: str):
