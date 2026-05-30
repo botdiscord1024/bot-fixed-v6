@@ -110,6 +110,7 @@ def render(route, title, desc, body):
         <a href="/levels" class="nav-item {% if route=='levels' %}active{% endif %}">⭐ Leveling System</a>
         <a href="/counting" class="nav-item {% if route=='counting' %}active{% endif %}">🔢 Counting Game</a>
         <a href="/ai-settings" class="nav-item {% if route=='ai-settings' %}active{% endif %}">🤖 AI Assistant</a>
+        <a href="/daily-modules" class="nav-item {% if route=='daily-modules' %}active{% endif %}">📆 Daily Modules</a>
         <a href="/smashkarts" class="nav-item {% if route=='smashkarts' %}active{% endif %}">🏎️ Smash Karts</a>
         <a href="/story" class="nav-item {% if route=='story' %}active{% endif %}">📖 Story Mode</a>
       </div>
@@ -208,40 +209,34 @@ def welcomer():
     cfg = load('config.json').get(gid, {})
     w_cfg = cfg.get('welcomer', {})
     
-    # Global module switch
     enabled = 'checked' if w_cfg.get('enabled', False) else ''
-    
-    # Sub-features switches
     welcome_enabled = 'checked' if w_cfg.get('welcome_enabled', False) else ''
     embed_enabled = 'checked' if w_cfg.get('embed_enabled', False) else ''
     autorole_enabled = 'checked' if w_cfg.get('autorole_enabled', False) else ''
     dm_enabled = 'checked' if w_cfg.get('dm_enabled', False) else ''
     
     channel = w_cfg.get('channel', '')
-    message = w_cfg.get('message', 'Здравей {user.mention}, добре дошъл в **{server.name}**! 🎉')
-    embed_title = w_cfg.get('embed_title', '👋 Нов Потребител!')
+    message = w_cfg.get('message', 'Hello {user.mention}, welcome to **{server.name}**! 🎉')
+    embed_title = w_cfg.get('embed_title', '👋 New Member Joined!')
     embed_color = w_cfg.get('embed_color', '#5865f2')
     autorole_roles = w_cfg.get('autorole_roles', '')
-    dm_message = w_cfg.get('dm_message', 'Привет! Радваме се, че се присъедини към {server.name}!')
+    dm_message = w_cfg.get('dm_message', 'Hey there! We are thrilled to have you join us at {server.name}!')
 
-    # Leave fields
     leave_enabled = 'checked' if w_cfg.get('leave_enabled', False) else ''
     leave_embed_enabled = 'checked' if w_cfg.get('leave_embed_enabled', False) else ''
     leave_channel = w_cfg.get('leave_channel', '')
-    leave_message = w_cfg.get('leave_message', 'Потребител **{user.name}** напусна сървъра. Останахме **{member_count}** членове. 😢')
-    leave_embed_title = w_cfg.get('leave_embed_title', '😢 Потребител напусна')
+    leave_message = w_cfg.get('leave_message', 'Member **{user.name}** left the server. We now have **{member_count}** total members. 😢')
+    leave_embed_title = w_cfg.get('leave_embed_title', '😢 A Member Left')
     leave_embed_color = w_cfg.get('leave_embed_color', '#f23f43')
 
     body = f"""
     <form id="welcomeForm" onsubmit="saveWelcome(event)">
-    
-    <!-- MASTER MODULE TOGGLE -->
     <div class="card" style="margin-bottom: 24px; border-left: 4px solid #5865f2;">
       <div class="card-body" style="padding: 20px;">
         <div class="toggle-row" style="margin: 0;">
           <div class="toggle-info">
             <h3 style="margin: 0 0 4px 0; color: #fff;">⚙️ Global Module Status</h3>
-            <p style="margin: 0; font-size: 13px; color: #b5bac1;">Enable or disable the entire Welcomer & Leave system on the server instantly</p>
+            <p style="margin: 0; font-size: 13px; color: #b5bac1;">Enable or disable the entire Welcomer & Leave system instantly</p>
           </div>
           <label class="toggle"><input type="checkbox" id="m_enabled" {enabled}> <span class="toggle-slider"></span></label>
         </div>
@@ -249,8 +244,6 @@ def welcomer():
     </div>
 
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
-      
-      <!-- WELCOME COLUMN -->
       <div>
         <div class="card">
           <div class="card-header"><div><h3>👋 Welcome Greetings</h3><p>Configure automated greetings for new members</p></div></div>
@@ -300,13 +293,11 @@ def welcomer():
             </div>
             <div class="field" style="margin-top:20px;">
               <label>Target Role IDs (Comma-separated for multiples)</label>
-              <input type="text" id="w_autorole_roles" value="{autorole_roles}" placeholder="123456789012345678, 876543210987654321">
+              <input type="text" id="w_autorole_roles" value="{autorole_roles}" placeholder="123456789012345678">
             </div>
-            
             <hr style="border:none;border-top:1px solid #2e3035;margin:20px 0;">
-            
             <div class="toggle-row">
-              <div class="toggle-info"><h4>Send DM on Join</h4><p>Transmit an automated onboarding slide straight to the user's private messages</p></div>
+              <div class="toggle-info"><h4>Send DM on Join</h4><p>Transmit an automated onboarding message straight to the user's private messages</p></div>
               <label class="toggle"><input type="checkbox" id="w_dm_enabled" {dm_enabled}> <span class="toggle-slider"></span></label>
             </div>
             <div class="field" style="margin-top:20px;">
@@ -317,7 +308,6 @@ def welcomer():
         </div>
       </div>
 
-      <!-- LEAVE COLUMN -->
       <div>
         <div class="card">
           <div class="card-header"><div><h3>😢 Leave Logger</h3><p>Configure automated leave messages for departing members</p></div></div>
@@ -358,7 +348,6 @@ def welcomer():
           </div>
         </div>
       </div>
-
     </div>
     
     <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save Module Configurations</button></div>
@@ -398,7 +387,7 @@ def welcomer():
     }}
     </script>
     """
-    return render('welcomer', '👋 Welcomer & Leave Module', 'Handle custom professional greeting cards, leave trackers, join workflows, and instant server onboarding rules', body)
+    return render('welcomer', '👋 Welcomer & Leave Module', 'Handle custom greeting cards, leave trackers, join workflows, and onboarding configurations', body)
 
 @app.route('/api/welcomer/save', methods=['POST'])
 def api_welcomer_save():
@@ -424,10 +413,10 @@ def levels():
     
     type_opt = cfg.get('levelup_type', 'channel')
     opts = f"""
-    <option value="channel" {{'selected' if type_opt=='channel' else ''}}>Specific Channel</option>
-    <option value="current" {{'selected' if type_opt=='current' else ''}}>Current Channel</option>
-    <option value="dm" {{'selected' if type_opt=='dm' else ''}}>Direct Message (DM)</option>
-    <option value="disabled" {{'selected' if type_opt=='disabled' else ''}}>Disabled</option>
+    <option value="channel" {'selected' if type_opt=='channel' else ''}>Specific Channel</option>
+    <option value="current" {'selected' if type_opt=='current' else ''}>Current Channel</option>
+    <option value="dm" {'selected' if type_opt=='dm' else ''}>Direct Message (DM)</option>
+    <option value="disabled" {'selected' if type_opt=='disabled' else ''}>Disabled</option>
     """
     
     msg_val = cfg.get('levelup_message', "GG {{user.mention}}! You just leveled up to **Level {{level}}**!")
@@ -756,6 +745,117 @@ def api_ai_emoji_delete():
     if hasattr(builtins, 'refresh_bot_cache'): 
         builtins.refresh_bot_cache()
     return jsonify({'ok':True})
+
+# ══════════════════════════════════════════════════════════
+#  🆕 DAILY MODULES PAGE (FOTD, QOTD, ROTD, SOTD)
+# ══════════════════════════════════════════════════════════
+@app.route('/daily-modules')
+def daily_modules():
+    gid = get_gid() or 'default'
+    cfg = load('config.json').get(gid, {})
+    
+    f_cfg = cfg.get('fotd_settings', {})
+    q_cfg = cfg.get('qotd_settings', {})
+    r_cfg = cfg.get('rotd_settings', {})
+    s_cfg = cfg.get('sotd_settings', {})
+    
+    f_on = 'checked' if f_cfg.get('enabled', True) else ''
+    q_on = 'checked' if q_cfg.get('enabled', True) else ''
+    r_on = 'checked' if r_cfg.get('enabled', True) else ''
+    s_on = 'checked' if s_cfg.get('enabled', True) else ''
+    
+    f_chan = f_cfg.get('channel_id', '')
+    q_chan = q_cfg.get('channel_id', '')
+    r_chan = r_cfg.get('channel_id', '')
+    s_chan = s_cfg.get('channel_id', '')
+    
+    body = f"""
+    <form id="dailyForm" onsubmit="saveDaily(event)">
+      <!-- FOTD -->
+      <div class="card">
+        <div class="card-header">
+          <div><h3>🧠 Fact Of The Day (FOTD)</h3><p>Automated interesting daily updates compiled by Gemini AI</p></div>
+          <label class="toggle"><input type="checkbox" id="f_enabled" {f_on}><span class="toggle-slider"></span></label>
+        </div>
+        <div class="card-body">
+          <div class="field"><label>Output Channel ID</label><input type="text" id="f_channel" value="{f_chan}" placeholder="123456789012345678"></div>
+        </div>
+      </div>
+
+      <!-- QOTD -->
+      <div class="card">
+        <div class="card-header">
+          <div><h3>❓ Question Of The Day (QOTD)</h3><p>Daily conversational engagement prompts for community topics</p></div>
+          <label class="toggle"><input type="checkbox" id="q_enabled" {q_on}><span class="toggle-slider"></span></label>
+        </div>
+        <div class="card-body">
+          <div class="field"><label>Output Channel ID</label><input type="text" id="q_channel" value="{q_chan}" placeholder="123456789012345678"></div>
+        </div>
+      </div>
+
+      <!-- ROTD -->
+      <div class="card">
+        <div class="card-header">
+          <div><h3>🧩 Riddle Of The Day (ROTD)</h3><p>Generate puzzling brain teasers dynamically every 24 hours</p></div>
+          <label class="toggle"><input type="checkbox" id="r_enabled" {r_on}><span class="toggle-slider"></span></label>
+        </div>
+        <div class="card-body">
+          <div class="field"><label>Output Channel ID</label><input type="text" id="r_channel" value="{r_chan}" placeholder="123456789012345678"></div>
+        </div>
+      </div>
+
+      <!-- SOTD -->
+      <div class="card">
+        <div class="card-header">
+          <div><h3>🎵 Song Of The Day (SOTD)</h3><p>Recommends gaming and rhythmic loops with high energy</p></div>
+          <label class="toggle"><input type="checkbox" id="s_enabled" {s_on}><span class="toggle-slider"></span></label>
+        </div>
+        <div class="card-body">
+          <div class="field"><label>Output Channel ID</label><input type="text" id="s_channel" value="{s_chan}" placeholder="123456789012345678"></div>
+        </div>
+      </div>
+
+      <div class="btn-save-row"><button type="submit" class="btn btn-primary">Save Daily Modules</button></div>
+    </form>
+
+    <div id="toast_daily" style="display:none;position:fixed;bottom:24px;right:24px;background:#23a55a;color:#fff;padding:12px 20px;border-radius:6px;font-weight:600;font-size:14px;z-index:9999;">✅ Daily modules configurations saved!</div>
+
+    <script>
+    function saveDaily(e){{
+      e.preventDefault();
+      fetch('/api/daily-modules/save', {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{
+          fotd: {{ enabled: document.getElementById('f_enabled').checked, channel_id: document.getElementById('f_channel').value }},
+          qotd: {{ enabled: document.getElementById('q_enabled').checked, channel_id: document.getElementById('q_channel').value }},
+          rotd: {{ enabled: document.getElementById('r_enabled').checked, channel_id: document.getElementById('r_channel').value }},
+          sotd: {{ enabled: document.getElementById('s_enabled').checked, channel_id: document.getElementById('s_channel').value }}
+        }})
+      }}).then(() => {{
+         var t = document.getElementById('toast_daily'); t.style.display='block'; setTimeout(()=>t.style.display='none',2500);
+      }});
+    }}
+    </script>
+    """
+    return render('daily-modules', '📆 Daily Automated Modules', 'Centralized configuration dashboard for managing cyclical broadcast integrations', body)
+
+@app.route('/api/daily-modules/save', methods=['POST'])
+def api_daily_modules_save():
+    gid = get_gid() or 'default'
+    cfg = load('config.json')
+    data = request.json
+    
+    cfg.setdefault(gid, {}).setdefault('fotd_settings', {}).update(data['fotd'])
+    cfg[gid].setdefault('qotd_settings', {}).update(data['qotd'])
+    cfg[gid].setdefault('rotd_settings', {}).update(data['rotd'])
+    cfg[gid].setdefault('sotd_settings', {}).update(data['sotd'])
+    
+    save('config.json', cfg)
+    import builtins
+    if hasattr(builtins, 'refresh_bot_cache'): 
+        builtins.refresh_bot_cache()
+    return jsonify({'ok': True})
 
 # ══════════════════════════════════════════════════════════
 #  SMASH KARTS PAGE
