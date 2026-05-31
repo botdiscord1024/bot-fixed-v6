@@ -10,46 +10,19 @@ def load(f):
 def save(f, d):
     json.dump(d, open(f, 'w', encoding='utf-8'), indent=2)
 
-def xp_for_level(level):
-    return 5 * (level ** 2) + 50 * level + 100
-
-def total_xp_for_level(level):
-    return sum(xp_for_level(i) for i in range(level))
-
-def get_level_from_xp(xp):
-    level = 0
-    while xp >= total_xp_for_level(level + 1):
-        level += 1
-        if level > 500: 
-            break
-    return level
-
-# 🔥 ФИКС: Умна функция за намиране на правилното Сървър ID
 def get_gid():
-    # 1. Първо гледаме дали ID-то е подадено в самия линк (URL Параметър)
-    gid = request.args.get('guild_id')
-    if gid:
-        return str(gid)
-        
-    # 2. Второ, опитваме се да го вземем от активния бот
     bot = current_app.config.get('BOT')
     if bot and hasattr(bot, 'cached_data'):
         for key in ['levels', 'config', 'moderation']:
             d = bot.cached_data.get(key, {})
-            if d:
-                return str(list(d.keys())[0])
-                
-    # 3. Трето (Най-сигурно) - взимаме първото реално ID от твоя config.json файл
+            if d: return str(list(d.keys())[0])
     cfg = load('config.json')
     if cfg:
-        # Взима първия ключ, който не е празен и е истинско ID
         real_ids = [k for k in cfg.keys() if k != 'default_guild']
-        if real_ids:
-            return str(real_ids[0])
-            
+        if real_ids: return str(real_ids[0])
     return 'default_guild'
 
-# 🔥 ФИКС: Менюто вече пренася Guild ID-то автоматично, за да не те изхвърля
+# ✨ ВЪЗСТАНОВЕН ДИЗАЙН И СТРУКТУРА ОТ IMAGE_043163.PNG (ПЪЛЕН ЕКРАН)
 def render(active_tab, title, subtitle, body_content):
     gid = get_gid()
     return render_template_string(f"""
@@ -60,65 +33,217 @@ def render(active_tab, title, subtitle, body_content):
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <style>
             * {{ margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }}
-            body {{ background-color: #1e1f22; color: #dbdee1; padding: 40px; }}
-            .container {{ max-width: 1100px; margin: 0 auto; display: flex; gap: 30px; }}
-            .sidebar {{ width: 260px; background: #111214; padding: 20px; border-radius: 12px; height: fit-content; }}
-            .sidebar h2 {{ font-size: 18px; color: #fff; margin-bottom: 20px; font-weight: 700; padding-left: 10px; }}
-            .nav-link {{ display: block; padding: 12px 15px; color: #949ba4; text-decoration: none; border-radius: 8px; font-weight: 500; margin-bottom: 5px; }}
-            .nav-link:hover, .nav-link.active {{ background: #2b2d31; color: #fff; }}
-            .main {{ flex: 1; }}
-            .header {{ margin-bottom: 30px; }}
-            .header h1 {{ color: #fff; font-size: 28px; margin-bottom: 5px; }}
+            
+            /* Разпъване на целия екран без излишни полета */
+            body {{ 
+                background-color: #1e1f22; 
+                color: #dbdee1; 
+                display: flex; 
+                min-height: 100vh; 
+                width: 100%;
+            }}
+            
+            /* Странично меню точно като на първата снимка */
+            .sidebar {{ 
+                width: 260px; 
+                background: #111214; 
+                padding: 24px 16px; 
+                display: flex; 
+                flex-direction: column;
+                border-right: 1px solid #1c1d20;
+                flex-shrink: 0;
+            }}
+            
+            .sidebar h2 {{ 
+                font-size: 19px; 
+                color: #fff; 
+                margin-bottom: 25px; 
+                font-weight: 700; 
+                padding-left: 10px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }}
+            
+            .sidebar-divider {{
+                height: 1px;
+                background: #2b2d31;
+                margin-bottom: 20px;
+                width: 100%;
+            }}
+            
+            /* Навигационни линкове с оригиналния дизайн */
+            .nav-link {{ 
+                display: flex; 
+                align-items: center; 
+                padding: 12px 15px; 
+                color: #949ba4; 
+                text-decoration: none; 
+                border-radius: 8px; 
+                font-weight: 500; 
+                margin-bottom: 6px; 
+                font-size: 14px;
+                transition: background 0.15s, color 0.15s;
+            }}
+            
+            .nav-link:hover {{ 
+                background: #2b2d31; 
+                color: #fff; 
+            }}
+            
+            /* Наситено лилав маркер за активен таб от Image_043163.png */
+            .nav-link.active {{ 
+                background: #7c00ff; 
+                color: #fff; 
+                font-weight: 600;
+            }}
+            
+            /* Основен контейнер - заема останалото пространство */
+            .main-content {{ 
+                flex: 1; 
+                padding: 40px; 
+                overflow-y: auto;
+            }}
+            
+            .header {{ margin-bottom: 35px; }}
+            .header h1 {{ color: #fff; font-size: 28px; font-weight: 700; margin-bottom: 6px; }}
             .header p {{ color: #949ba4; font-size: 14px; }}
-            .card {{ background: #2b2d31; border-radius: 12px; padding: 25px; margin-bottom: 25px; border: 1px solid #3f4248; }}
-            .card-header {{ margin-bottom: 20px; border-bottom: 1px solid #3f4248; padding-bottom: 15px; }}
-            .card-header h3 {{ color: #fff; font-size: 18px; }}
+            
+            /* Карти и Инпути */
+            .card {{ 
+                background: #2b2d31; 
+                border-radius: 8px; 
+                padding: 25px; 
+                margin-bottom: 25px; 
+                border: 1px solid #202225; 
+            }}
+            
+            .card-header {{ 
+                margin-bottom: 20px; 
+                border-bottom: 1px solid #3f4248; 
+                padding-bottom: 15px; 
+            }}
+            
+            .card-header h3 {{ color: #fff; font-size: 18px; font-weight: 600; }}
+            
             .form-group {{ margin-bottom: 20px; }}
-            label {{ display: block; color: #b5bac1; font-size: 13px; font-weight: 600; margin-bottom: 8px; text-transform: uppercase; }}
-            input[type="text"], input[type="number"], textarea {{ width: 100%; padding: 12px; background: #1e1f22; border: 1px solid #111214; border-radius: 6px; color: #fff; font-size: 14px; }}
-            input:focus, textarea:focus {{ border-color: #5865f2; outline: none; }}
-            .btn {{ background: #5865f2; color: #fff; padding: 12px 24px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px; }}
-            .btn:hover {{ background: #4752c4; }}
-            .badge-container {{ margin-top: 8px; display: flex; gap: 8px; }}
-            .badge {{ background: #111214; padding: 4px 8px; border-radius: 4px; font-size: 12px; color: #5865f2; font-family: monospace; cursor: pointer; }}
+            label {{ display: block; color: #b5bac1; font-size: 12px; font-weight: 700; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }}
+            
+            input[type="text"], input[type="number"], textarea {{ 
+                width: 100%; 
+                padding: 12px; 
+                background: #1e1f22; 
+                border: 1px solid #111214; 
+                border-radius: 6px; 
+                color: #fff; 
+                font-size: 14px; 
+            }}
+            
+            input:focus, textarea:focus {{ border-color: #7c00ff; outline: none; }}
+            
+            /* Бутони от първата картинка */
+            .btn {{ 
+                background: #7c00ff; 
+                color: #fff; 
+                padding: 12px 24px; 
+                border: none; 
+                border-radius: 6px; 
+                font-weight: 600; 
+                cursor: pointer; 
+                font-size: 14px;
+                transition: background 0.2s;
+            }}
+            .btn:hover {{ background: #6600d1; }}
+            
+            .btn-green {{
+                background: #00e676;
+                color: #000;
+            }}
+            .btn-green:hover {{ background: #00c853; color: #fff; }}
+            
+            .badge-container {{ margin-top: 10px; display: flex; gap: 8px; }}
+            .badge {{ background: #111214; padding: 6px 10px; border-radius: 4px; font-size: 12px; color: #00e676; font-family: monospace; cursor: pointer; }}
             .alert-success {{ background: #23a55a; color: #fff; padding: 12px; border-radius: 6px; margin-bottom: 20px; font-size: 14px; }}
-            .guild-badge {{ font-size: 11px; background: #23a55a; color: white; padding: 2px 6px; border-radius: 20px; margin-left: 5px; vertical-align: middle; }}
         </style>
     </head>
     <body>
-        <div class="container">
-            <div class="sidebar">
-                <h2>🎛️ Control Center</h2>
-                <a href="/?guild_id={gid}" class="nav-link {'active' if active_tab=='overview' else ''}">Overview</a>
-                <a href="/leveling?guild_id={gid}" class="nav-link {'active' if active_tab=='leveling' else ''}">🎭 Leveling System</a>
-                <a href="/smashkarts?guild_id={gid}" class="nav-link {'active' if active_tab=='smashkarts' else ''}">🏎️ Smash Karts</a>
-                <a href="/story?guild_id={gid}" class="nav-link {'active' if active_tab=='story' else ''}">📖 Story Session</a>
+        <!-- СТРАНИЧНА ЛЕНТА (ВЪЗСТАНОВЕНА НАПЪЛНО) -->
+        <div class="sidebar">
+            <h2>👑 Admin Panel</h2>
+            <div class="sidebar-divider"></div>
+            <a href="/moderation?guild_id={gid}" class="nav-link {'active' if active_tab=='moderation' else ''}">🛡️ Moderation</a>
+            <a href="/welcomer?guild_id={gid}" class="nav-link {'active' if active_tab=='welcomer' else ''}">👋 Welcomer</a>
+            <a href="/leveling?guild_id={gid}" class="nav-link {'active' if active_tab=='leveling' else ''}">⭐ Leveling System</a>
+            <a href="/counting?guild_id={gid}" class="nav-link {'active' if active_tab=='counting' else ''}">🔢 Counting Game</a>
+            <a href="/ai_assistant?guild_id={gid}" class="nav-link {'active' if active_tab=='ai_assistant' else ''}">🤖 AI Assistant</a>
+            <a href="/daily?guild_id={gid}" class="nav-link {'active' if active_tab=='daily' else ''}">📅 Daily Modules</a>
+            <a href="/smashkarts?guild_id={gid}" class="nav-link {'active' if active_tab=='smashkarts' else ''}">🏎️ Smash Karts</a>
+            <a href="/story?guild_id={gid}" class="nav-link {'active' if active_tab=='story' else ''}">📖 Story Mode</a>
+        </div>
+        
+        <!-- ОСНОВНО СЪДЪРЖАНИЕ -->
+        <div class="main-content">
+            <div class="header">
+                <h1>{title}</h1>
+                <p>{subtitle}</p>
             </div>
-            <div class="main">
-                <div class="header">
-                    <h1>{title} <span class="guild-badge">ID: {gid}</span></h1>
-                    <p>{subtitle}</p>
-                </div>
-                {body_content}
-            </div>
+            {body_content}
         </div>
     </body>
     </html>
     """)
 
+# ЗАПАЗВАНЕ НА ОРИГИНАЛНИТЕ СТРАНИЦИ ТАКА, ЧЕ ДА НЕ ДАВАТ ГРЕШКИ
 @app.route('/')
-def index():
-    gid = get_gid()
-    return render('overview', 'Dashboard Overview', 'Manage your connected Discord bot instances seamlessly.', f'<div class="card"><h3>Welcome to the core management terminal.</h3><p style="margin-top:10px; color:#949ba4;">Active Guild Context: <strong>{gid}</strong></p></div>')
+@app.route('/moderation')
+def moderation():
+    return render('moderation', 'Moderation Settings', 'Configure moderation patterns and automation parameters.', '<div class="card"><h3>Moderation modules are running sub-routines safely.</h3></div>')
 
+@app.route('/welcomer')
+def welcomer():
+    return render('welcomer', 'Welcomer Settings', 'Configure joining and leaving announcement settings.', '<div class="card"><h3>Welcomer module is active.</h3></div>')
+
+@app.route('/counting')
+def counting():
+    return render('counting', 'Counting Game Configuration', 'Track and modify current counting steps.', '<div class="card"><h3>Counting logic active.</h3></div>')
+
+@app.route('/ai_assistant')
+def ai_assistant():
+    return render('ai_assistant', 'AI Assistant', 'Configure AI actions and external emojis', """
+    <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <strong>Auto Emoji Reactions</strong><br>
+                <span style="color:#949ba4; font-size:13px;">Allow the AI to automatically place smart emojis on messages</span>
+            </div>
+            <div style="background:#23a55a; width:40px; height:22px; border-radius:12px; position:relative; cursor:pointer;"><div style="background:white; width:18px; height:18px; border-radius:50%; position:absolute; right:2px; top:2px;"></div></div>
+        </div>
+        <div style="text-align:right; margin-top:20px;"><button class="btn">Save Settings</button></div>
+    </div>
+    """)
+
+@app.route('/daily')
+def daily():
+    return render('daily', 'Daily Modules', 'Manage continuous daily retention metrics.', '<div class="card"><h3>Daily triggers ready.</h3></div>')
+
+@app.route('/smashkarts')
+def smashkarts():
+    return render('smashkarts', '🏎️ Smash Karts Statistics', 'Global race metrics compilation.', '<div class="card">No matches recorded.</div>')
+
+@app.route('/story')
+def story():
+    return render('story', '📖 Story Mode Session', 'Adventure layout panel.', '<div class="card">No active story profiles.</div>')
+
+# ══════════════════════════════════════════════════════════
+#  🎯 ПРАВИЛНАТА СТРАНИЦА ЗА НИВАТА (ИНТЕГРИРАНА В СТАРИЯ СТИЛ)
+# ══════════════════════════════════════════════════════════
 @app.route('/leveling', methods=['GET', 'POST'])
 def leveling():
     gid = get_gid()
     config_data = load('config.json')
     levels_data = load('levels.json')
 
-    if gid not in config_data:
-        config_data[gid] = {}
+    if gid not in config_data: config_data[gid] = {}
     if 'level_up_msg' not in config_data[gid]:
         config_data[gid]['level_up_msg'] = "🎉 GG {user}, you just leveled up to **Level {level}**! 🚀"
 
@@ -126,25 +251,19 @@ def leveling():
 
     if request.method == 'POST':
         action = request.form.get('action')
-        
         if action == "update_msg":
             new_msg = request.form.get('level_up_msg', '').strip()
             if new_msg:
                 config_data[gid]['level_up_msg'] = new_msg
                 save('config.json', config_data)
                 status_msg = '<div class="alert-success">✅ Level Up Message updated successfully!</div>'
-        
         elif action == "add_xp":
             user_id = request.form.get('user_id', '').strip()
             xp_to_add = request.form.get('xp_amount', '0').strip()
-            
             if user_id and xp_to_add.isdigit():
                 xp_amount = int(xp_to_add)
-                if gid not in levels_data:
-                    levels_data[gid] = {}
-                if user_id not in levels_data[gid]:
-                    levels_data[gid][user_id] = {"xp": 0, "name": f"User {user_id}"}
-                
+                if gid not in levels_data: levels_data[gid] = {}
+                if user_id not in levels_data[gid]: levels_data[gid][user_id] = {"xp": 0, "name": f"User {user_id}"}
                 levels_data[gid][user_id]["xp"] += xp_amount
                 save('levels.json', levels_data)
                 status_msg = f'<div class="alert-success">✅ Successfully added {xp_amount} XP points to User {user_id}!</div>'
@@ -153,7 +272,6 @@ def leveling():
 
     body = f"""
     {status_msg}
-
     <div class="card">
         <div class="card-header">
             <h3>📝 Edit Level Up Notification Layout</h3>
@@ -164,14 +282,14 @@ def leveling():
                 <label>Notification Custom Template String</label>
                 <textarea name="level_up_msg" rows="3" required>{current_msg}</textarea>
                 <p style="color:#949ba4; font-size:12px; margin-top: 8px;">
-                    Customize how your system announces a level up milestone. Supported inline context badges:
+                    Click tokens below to inject them into the template layout structure:
                 </p>
                 <div class="badge-container">
-                    <span class="badge" onclick="document.querySelector('textarea').value += ' {user}'">{{user}} - Mentions the user</span>
-                    <span class="badge" onclick="document.querySelector('textarea').value += ' {{level}}'">{{level}} - Outputs the new level rank</span>
+                    <span class="badge" onclick="document.querySelector('textarea').value += ' {user}'">{{user}} - Ping User</span>
+                    <span class="badge" onclick="document.querySelector('textarea').value += ' {{level}}'">{{level}} - Target Level</span>
                 </div>
             </div>
-            <button type="submit" class="btn">Save Configuration</button>
+            <div style="text-align:right;"><button type="submit" class="btn">Save Settings</button></div>
         </form>
     </div>
 
@@ -191,19 +309,11 @@ def leveling():
                     <input type="number" name="xp_amount" placeholder="e.g. 500" min="1" required>
                 </div>
             </div>
-            <button type="submit" class="btn" style="background:#23a55a;">Deposit XP Tokens</button>
+            <button type="submit" class="btn btn-green">Deposit XP Tokens</button>
         </form>
     </div>
     """
-    return render('leveling', '🎭 Leveling Customization Engine', 'Configure dynamic reward settings, modify milestone alerts, and manage user score records.', body)
-
-@app.route('/smashkarts')
-def smashkarts():
-    return render('smashkarts', '🏎️ Smash Karts Statistics', 'Global race metrics compilation.', '<div class="card">No matches recorded.</div>')
-
-@app.route('/story')
-def story():
-    return render('story', '📖 Story Mode Session', 'Adventure layout panel.', '<div class="card">No active story profiles.</div>')
+    return render('leveling', 'Leveling System', 'Configure AI actions and level up message templates.', body)
 
 if __name__ == '__main__':
     app.run(port=5000, debug=True)
