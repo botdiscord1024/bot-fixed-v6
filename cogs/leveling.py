@@ -44,100 +44,107 @@ class Leveling(commands.Cog):
         cfg = load('config.json')
         if gid not in cfg:
             cfg[gid] = {}
-        if 'level_up_msg' not in cfg[gid]:
-            cfg[gid]['level_up_msg'] = "🎉 GG {user}, you just leveled up to **Level {level}**! 🚀"
-        return cfg[gid]
+        if 'leveling' not in cfg[gid]:
+            cfg[gid]['leveling'] = {
+                'level_up_msg': "🎉 GG {user}, you just leveled up to **Level {level}**! 🚀",
+                'level_channel': ""
+            }
+        return cfg[gid]['leveling']
+
+    async def handle_level_up(self, member, old_level, new_level, default_channel=None):
+        if new_level > old_level:
+            gid = str(member.guild.id)
+            settings = self.get_guild_settings(gid)
+            
+            # Взимаме съобщението от таблото и заместваме таговете
+            raw_msg = settings.get('level_up_msg', "🎉 GG {user}, you just leveled up to **Level {level}**! 🚀")
+            msg = raw_msg.replace('{user}', member.mention).replace('{level}', str(new_level))
+            
+            # Проверяваме дали има зададен специфичен канал
+            target_channel_id = settings.get('level_channel', '')
+            send_channel = default_channel
+
+            if target_channel_id and target_channel_id.isdigit():
+                found_channel = member.guild.get_channel(int(target_channel_id))
+                if found_channel:
+                    send_channel = found_channel
+
+            if send_channel:
+                try:
+                    await send_channel.send(msg)
+                except Exception as e:
+                    print(f"[Leveling] Could not send level up message: {e}")
 
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot or not message.guild:
             return
 
-        gid = str(message.guild.id)
         uid = str(message.author.id)
-        
-        # Cooldown check (1 message per minute yields XP)
+        gid = str(message.guild.id)
         now = time.time()
-        if uid in XP_CD and now - XP_CD[uid] < 60:
+
+        if gid not in XP_CD: XP_CD[gid] = {}
+        
+        # 60 секунди cooldown за писане
+        if now - XP_CD[gid].get(uid, 0) < 60:
             return
-        XP_CD[uid] = now
 
+        XP_CD[gid][uid] = now
         lvl_data = load('levels.json')
-        if gid not in lvl_data:
-            lvl_data[gid] = {}
-        if uid not in lvl_data[gid]:
-            lvl_data[gid][uid] = {"xp": 0, "name": message.author.name}
-
+        
+        if gid not in lvl_data: lvl_data[gid] = {}
+        if uid not in lvl_data[gid]: lvl_data[gid][uid] = {"xp": 0, "name": message.author.name}
+        
         old_xp = lvl_data[gid][uid]["xp"]
         old_level = get_level(old_xp)
         
-        # Add random XP between 15 and 25
-        gained_xp = random.randint(15, 25)
-        new_xp = old_xp + gained_xp
-        lvl_data[gid][uid]["xp"] = new_xp
+        # Добавяме рандъм XP
+        lvl_data[gid][uid]["xp"] += random.randint(15, 25)
         lvl_data[gid][uid]["name"] = message.author.name
+        
+        new_level = get_level(lvl_data[gid][uid]["xp"])
         save('levels.json', lvl_data)
 
-        new_level = get_level(new_xp)
-        
-        # ── ✨ PREMIUM EMBED LEVEL UP NOTIFICATION ──
-        if new_level > old_level:
-            settings = self.get_guild_settings(gid)
-            raw_msg = settings.get('level_up_msg')
-            
-            # Formulating formatting placeholders
-            formatted_msg = raw_msg.replace("{user}", message.author.mention).replace("{level}", str(new_level))
-            
-            # Creating a clean, modern Discord Embed layout (Image 1 Style)
-            em = discord.Embed(
-                title="⚡ LEVEL UP!",
-                description=formatted_msg,
-                color=discord.Color.from_rgb(88, 101, 242) # Premium Blurple Accent
-            )
-            em.set_thumbnail(url=message.author.display_avatar.url)
-            em.set_footer(text=f"Progressing towards Level {new_level + 1} • Total XP: {new_xp}")
-            
-            await message.channel.send(embed=em)
-            
-            # Process Role Rewards if any
-            lr = load('levelroles.json').get(gid, {})
-            if str(new_level) in lr:
-                role_id = lr[str(new_level)]
-                role = message.guild.get_role(role_id)
-                if role:
-                    try:
-                        await message.author.add_roles(role)
-                    except:
-                        pass
+        # Проверка за качване на ниво
+        await self.handle_level_up(message.author, old_level, new_level, default_channel=message.channel)
 
-    @tasks.loop(minutes=1.0)
+    @tasks.loop(minutes=2)
     async def voice_xp_ticker(self):
-        # Background loop for handling active voice channels XP distribution
+        lvl_data = load('levels.json')
         for guild in self.bot.guilds:
             gid = str(guild.id)
-            lvl_data = load('levels.json')
-            if gid not in lvl_data:
-                lvl_data[gid] = {}
+            if gid not in lvl_data: lvl_data[gid] = {}
+            
+            for voice_channel in guild.voice_channels:
+                members = [m for m in voice_channel.members if not m.bot and not m.voice.self_deaf and not m.voice.self_mute]
                 
-            for vc in guild.voice_channels:
-                if len(vc.members) < 2:
+                # Даваме XP само ако има повече от 1 човек в канала
+                if len(members) < 2:
                     continue
-                for member in vc.members:
-                    if member.bot or member.voice.self_deaf or member.voice.deaf:
-                        continue
+                    
+                for member in members:
                     uid = str(member.id)
-                    if uid not in lvl_data[gid]:
-                        lvl_data[gid][uid] = {"xp": 0, "name": member.name}
+                    if uid not in lvl_data[gid]: lvl_data[gid][uid] = {"xp": 0, "name": member.name}
                     
                     old_xp = lvl_data[gid][uid]["xp"]
-                    old_lvl = get_level(old_xp)
+                    old_level = get_level(old_xp)
+                    
                     lvl_data[gid][uid]["xp"] += random.randint(10, 20)
                     lvl_data[gid][uid]["name"] = member.name
                     
-                    if get_level(lvl_data[gid][uid]["xp"]) > old_lvl:
-                        # Notify optionally or update seamlessly
-                        pass
+                    new_level = get_level(lvl_data[gid][uid]["xp"])
+                    
+                    # Ако е вдигнал ниво във Voice, пращаме в default channel на сървъра
+                    if new_level > old_level:
+                        default_chan = guild.system_channel or next((c for c in guild.text_channels if c.permissions_for(guild.me).send_messages), None)
+                        await self.handle_level_up(member, old_level, new_level, default_channel=default_chan)
+                        
             save('levels.json', lvl_data)
+
+    @voice_xp_ticker.before_loop
+    async def before_voice_xp(self):
+        await self.bot.wait_until_ready()
 
     @app_commands.command(name="rank", description="Check your current level progress status")
     async def rank(self, interaction: discord.Interaction, member: discord.Member = None):
@@ -154,7 +161,9 @@ class Leveling(commands.Cog):
         em.set_thumbnail(url=member.display_avatar.url)
         em.add_field(name="✨ Current Level", value=f"`Level {level}`", inline=True)
         em.add_field(name="📈 Total XP Collected", value=f"`{xp} XP`", inline=True)
-        em.add_field(name="🎯 Next Level Progress", value=f"`{cur_xp} / {needed_xp} XP`\n{progress_bar}", inline=False)
+        em.add_field(name="🎯 Next Level Progress", value=f"`{cur_xp} / {needed_xp} XP`", inline=False)
+        em.add_field(name="Progress Bar", value=f"`[{progress_bar}]`", inline=False)
+        
         await interaction.response.send_message(embed=em)
 
 async def setup(bot):
