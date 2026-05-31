@@ -5,6 +5,7 @@ import aiohttp
 import io
 import time
 import PIL.Image
+import urllib.parse
 from collections import OrderedDict
 from utils import load, save, err, ok
 from gemini_guard import ask_gemini, get_stats
@@ -13,6 +14,7 @@ USER_COOLDOWN_SECONDS = 15
 _user_last_call: dict = {}
 
 def _check_user_cooldown(uid: str) -> float:
+    """Returns the remaining cooldown seconds or 0.0 if available."""
     last = _user_last_call.get(uid, 0)
     elapsed = time.time() - last
     remaining = USER_COOLDOWN_SECONDS - elapsed
@@ -22,61 +24,71 @@ class AIAssistant(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         # Maps user_message_id -> list of bot_message_ids (handles deletion and edits)
+        # Capped at 1000 items to guarantee no memory leaks during long uptimes
         self.response_tracker = OrderedDict()
 
     def get_guild_config(self, gid):
         return load('config.json').get(str(gid), {})
 
     def _track_response(self, user_msg_id: int, bot_msg_ids: list):
+        """Saves response tracking data and drops the oldest entry if limit reached."""
         if len(self.response_tracker) > 1000:
             self.response_tracker.popitem(last=False)
         self.response_tracker[user_msg_id] = bot_msg_ids
 
     # ══════════════════════════════════════════════════════════
-    #  🎨 EXPLICIT GENERATION FLOW (DIRECT GEMINI CALL)
+    #  🎨 IMAGE GENERATION FLOW (POLLINATIONS AI - NANO BANANA 2)
     # ══════════════════════════════════════════════════════════
     async def handle_generation_flow(self, message, prompt: str):
-        """Triggers when a user says '@Bot generate ...'. Gemini acts as a dedicated asset creator."""
+        """Triggers when a user says '@Bot generate ...'. Generates a real image using nano-banana-2!"""
         if not prompt:
-            sent_msg = await message.reply("❌ Please provide a prompt for me to generate! (e.g., `@Bot generate a sci-fi story about Mars`)")
+            sent_msg = await message.reply("❌ Please provide a prompt for the image! (e.g., `@Bot generate a futuristic cyberpunk city`)")
             self._track_response(message.id, [sent_msg.id])
             return
 
         try:
+            # 1. Trigger typing effect to provide visual feedback
             async with message.channel.typing():
-                # Specialized professional generator prompt layout
-                generation_system_prompt = (
-                    "You are an expert AI Content Generator and Asset Designer for a premium Discord community. "
-                    "Your job is to generate incredibly high-quality, creative, and detailed assets based on the prompt. "
-                    "Use advanced markdown formatting, clear code blocks, list metrics, or storytelling structures where applicable. "
-                    "Make your output look visually stunning, polished, and structured. Include descriptive emojis naturally. "
-                    "All outputs must be strictly in English."
-                )
+                # Clean and encode the prompt so it's safe for a URL parameter
+                encoded_prompt = urllib.parse.quote(prompt)
                 
-                # We forward the prompt straight to Gemini Guard
-                response_text = await ask_gemini(prompt, system=generation_system_prompt)
+                # Unique seed based on timestamp ensures fresh art variations
+                seed = int(time.time())
                 
-                if response_text:
-                    bot_sent_messages = []
-                    # Handle message length splits automatically
-                    if len(response_text) > 2000:
-                        chunks = [response_text[i:i+1900] for i in range(0, len(response_text), 1900)]
-                        for chunk in chunks:
-                            sent_msg = await message.reply(chunk)
-                            bot_sent_messages.append(sent_msg.id)
-                    else:
-                        sent_msg = await message.reply(response_text)
-                        bot_sent_messages.append(sent_msg.id)
-                    
-                    # Ensure tracking works perfectly even for generations
-                    self._track_response(message.id, bot_sent_messages)
-                else:
-                    sent_msg = await message.reply("❌ Failed to generate content from the AI core.")
-                    self._track_response(message.id, [sent_msg.id])
+                # Dynamic image URL pointing directly to the nano-banana-2 render engine
+                image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={seed}&nofeed=true&model=nano-banana-2"
+                
+                # 2. Request the generated image bytes
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(image_url) as resp:
+                        if resp.status == 200:
+                            img_data = await resp.read()
+                            
+                            # 3. Pack raw bytes into a streamable Discord File
+                            discord_file = discord.File(io.BytesIO(img_data), filename="generated_asset.png")
+                            
+                            # 4. Wrap everything inside a clean embedded layout
+                            em = discord.Embed(
+                                title="🎨 AI Image Generation", 
+                                description=f"Successfully generated asset using **Nano Banana 2** for {message.author.mention}", 
+                                color=discord.Color.gold()
+                            )
+                            em.add_field(name="💡 Prompt Used", value=f"*{prompt}*", inline=False)
+                            em.set_image(url="attachment://generated_asset.png")
+                            
+                            # Deliver the asset
+                            sent_msg = await message.reply(file=discord_file, embed=em)
+                            
+                            # Link to tracker so it reacts cleanly to message deletions/edits
+                            self._track_response(message.id, [sent_msg.id])
+                        else:
+                            sent_msg = await message.reply("❌ The nano-banana-2 engine is currently busy. Please try again.")
+                            self._track_response(message.id, [sent_msg.id])
+                            
         except Exception as e:
-            print(f"[Generation Core Error]: {e}")
+            print(f"[Generation Engine Error]: {e}")
             try:
-                sent_msg = await message.reply(f"⚠️ Error during content generation: {str(e)[:100]}")
+                sent_msg = await message.reply(f"⚠️ Failed to render image: {str(e)[:100]}")
                 self._track_response(message.id, [sent_msg.id])
             except: pass
 
@@ -87,16 +99,17 @@ class AIAssistant(commands.Cog):
         uid = str(message.author.id)
         remaining = _check_user_cooldown(uid)
         
+        # Skip cooldown constraints on text edits for a seamless user experience
         if remaining > 0 and not is_edit:
             await message.reply(f"⏱️ Please wait {round(remaining, 1)} seconds before asking another question!", delete_after=5)
             return
         
         _user_last_call[uid] = time.time()
 
-        # Clean the bot mention from text
+        # Isolate clean message text by stripping bot mentions
         user_input = message.content.replace(f'<@{self.bot.user.id}>', '').replace(f'<@!{self.bot.user.id}>', '').strip()
 
-        # 🔀 THE ROUTER: If it starts with "generate", hand it off completely to Gemini Generator
+        # 🔀 INTERNAL ROUTER: Intercept phrases starting with "generate"
         if user_input.lower().startswith("generate"):
             generation_prompt = user_input[len("generate"):].strip()
             await self.handle_generation_flow(message, generation_prompt)
@@ -105,7 +118,7 @@ class AIAssistant(commands.Cog):
         contents_to_send = []
         has_image = False
 
-        # 📸 Check for attached images
+        # 📸 Process multimodal attached images
         if message.attachments:
             for attachment in message.attachments:
                 if attachment.content_type and attachment.content_type.startswith("image/"):
@@ -139,6 +152,7 @@ class AIAssistant(commands.Cog):
                 
                 if response_text:
                     bot_sent_messages = []
+                    # Handle message segmenting if response exceeds Discord's 2000 character limit
                     if len(response_text) > 2000:
                         chunks = [response_text[i:i+1900] for i in range(0, len(response_text), 1900)]
                         for chunk in chunks:
@@ -183,8 +197,10 @@ class AIAssistant(commands.Cog):
         if is_mentioned or is_reply_to_bot:
             await self._execute_ai_flow(message, is_edit=False)
 
+    # ── 🗑️ LISTENER: ON MESSAGE DELETE ──
     @commands.Cog.listener()
     async def on_message_delete(self, message):
+        """Deletes all chunks of the bot's response if the user deletes their original prompt."""
         if message.id in self.response_tracker:
             bot_msg_ids = self.response_tracker.pop(message.id, [])
             for b_id in bot_msg_ids:
@@ -193,8 +209,10 @@ class AIAssistant(commands.Cog):
                 except Exception:
                     pass
 
+    # ── ✏️ LISTENER: ON MESSAGE EDIT ──
     @commands.Cog.listener()
     async def on_message_edit(self, before, after):
+        """Deletes the old response and builds a fresh one when a prompt is edited."""
         if before.content == after.content:
             return
 
@@ -208,6 +226,7 @@ class AIAssistant(commands.Cog):
             
             await self._execute_ai_flow(after, is_edit=True)
 
+    # ── Slash Command: /ai_status ──
     @app_commands.command(name="ai_status", description="Check the AI core load and daily statistics")
     async def ai_status(self, interaction: discord.Interaction):
         try:
@@ -225,27 +244,4 @@ class AIAssistant(commands.Cog):
         except Exception as e:
             await interaction.response.send_message(f"❌ Error fetching stats: {e}", ephemeral=True)
 
-    @app_commands.command(name="ai_emoji", description="Render a custom web dashboard emoji directly into chat")
-    @app_commands.describe(name="The unique name of the custom emoji")
-    async def ai_emoji(self, interaction: discord.Interaction, name: str):
-        gid = str(interaction.guild.id)
-        cfg = self.get_guild_config(gid)
-        custom_emojis = cfg.get('custom_external_emojis', {})
-        
-        if name not in custom_emojis:
-            return await interaction.response.send_message(
-                embed=err(f"Emoji `:{name}:` was not found on the web dashboard!"), ephemeral=True)
-        
-        await interaction.response.defer()
-        url = custom_emojis[name]
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                if resp.status == 200:
-                    img_data = await resp.read()
-                    await interaction.followup.send(file=discord.File(io.BytesIO(img_data), filename=f"{name}.png"))
-                else:
-                    await interaction.followup.send(embed=err("Failed to fetch the requested emoji asset."), ephemeral=True)
-
-async def setup(bot):
-    await bot.add_cog(AIAssistant(bot))
+    # ──
