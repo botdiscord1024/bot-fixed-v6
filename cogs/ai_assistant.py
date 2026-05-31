@@ -244,4 +244,28 @@ class AIAssistant(commands.Cog):
         except Exception as e:
             await interaction.response.send_message(f"❌ Error fetching stats: {e}", ephemeral=True)
 
-    # ──
+    # ── Slash Command: /ai_emoji ──
+    @app_commands.command(name="ai_emoji", description="Render a custom web dashboard emoji directly into chat")
+    @app_commands.describe(name="The unique name of the custom emoji")
+    async def ai_emoji(self, interaction: discord.Interaction, name: str):
+        gid = str(interaction.guild.id)
+        cfg = self.get_guild_config(gid)
+        custom_emojis = cfg.get('custom_external_emojis', {})
+        
+        if name not in custom_emojis:
+            return await interaction.response.send_message(
+                embed=err(f"Emoji `:{name}:` was not found on the web dashboard!"), ephemeral=True)
+        
+        await interaction.response.defer()
+        url = custom_emojis[name]
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                if resp.status == 200:
+                    img_data = await resp.read()
+                    await interaction.followup.send(file=discord.File(io.BytesIO(img_data), filename=f"{name}.png"))
+                else:
+                    await interaction.followup.send(embed=err("Failed to fetch the requested emoji asset."), ephemeral=True)
+
+async def setup(bot):
+    await bot.add_cog(AIAssistant(bot))
